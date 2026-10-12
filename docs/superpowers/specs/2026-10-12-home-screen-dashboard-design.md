@@ -38,7 +38,8 @@ adds the surface those would attach to, without inventing a first-run flow — s
 **Goals**
 
 1. Show **all 33 existing presets** (`new_doc_ui::CATEGORIES`, 7 categories) as a template gallery on the
-   Home screen.
+   Home screen — the "Recent" category mirrors the New dialog's behaviour of showing recently-used
+   sizes instead of its two static presets (§5.3).
 2. Make the Home screen responsive: dashboard at ≥ 900 px, today's card below that, with no layout
    clipping at the 760 × 480 minimum window size (`apps/photocraft/src/main.rs:76`).
 3. Move Home-screen code out of `canvas.rs` (6,000+ lines) into a module with one job.
@@ -103,21 +104,33 @@ default window the dashboard has room for the three columns defined below.
    200 px              flexible                    260 px
 ```
 
-Column widths are fixed by `Tokens` spacing conventions; the templates column takes the remainder.
-The columns collapse into a single scrollable column rather than clipping if the height is short —
-this is what prevents clipping at 760 × 480 in the wide layout at minimum window height.
+Column widths are fixed: **200 px** left rail, **260 px** right column, and the templates column takes
+the remainder. If the available **height** is shorter than the content needs, the dashboard body is
+wrapped in a vertical `ScrollArea` (as `new_doc_ui.rs:483` already does for the dialog's preset grid)
+rather than clipping.
 
 ### 5.3 Templates panel
 
 - One **active category** at a time, selected by a chip row across the top. `Recent` is active on open.
 - Below the chips, a grid of cards for that category.
+- Cards are **164 × 112** and the grid is **3 columns**, matching the New Document dialog exactly
+  (`new_doc_ui.rs:474-481`) so a user recognises the same card in both places.
 - Each card shows a **shape drawn at the preset's real aspect ratio**, with the preset name and its
   pixel dimensions under it. No images.
+- Category and preset labels use the same dynamic lookup the dialog uses — `tl!(name)` on the
+  `&'static str` from `CATEGORIES` (`new_doc_ui.rs:452`) — so **no new string enters any catalog**.
+- **"Recent" is special, exactly as in the dialog** (`new_doc_ui.rs:466-469`): selecting it shows the
+  user's recently-used sizes from `app.session.presets.recent_documents`, not the two static presets.
+  The Home screen mirrors this rather than showing something different from the dialog.
 - Clicking a card opens the **existing** `DialogKind::NewDocument` dialog with `apply_preset` already
   applied, so the user can adjust the size before committing. This matches Photoshop, where a template
   click opens a dialog rather than creating silently.
 - `Browse all templates →` is not shipped in the first dashboard PR: with one active category the grid
   is already reachable, and a second entry point to the same data would be redundant.
+
+**Why the same card size as the dialog.** Two cards for the same preset at different sizes is the kind
+of small inconsistency users read as sloppiness. Reusing 164 × 112 / 3 columns costs nothing and makes
+the two surfaces read as one feature.
 
 **Why no images.** Template artwork would be bundled assets: a licence file beside each one and a row
 in `ATTRIBUTION.md` (AGENTS.md golden rule 3). Shape plus dimensions delivers most of the value at zero
@@ -205,6 +218,11 @@ No `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!` or `unimplemented!` out
 PR 1 lands first deliberately: a behaviour-neutral move. If it is rejected or breaks something, that is
 discovered immediately, before any visual change exists to unpick.
 
+**Plan boundary.** The implementation plan written from this spec covers **PR 1 and PR 2** — the code move
+and the dashboard with templates. PR 3 (Learn column) and PR 4 (thumbnails, which crosses into `L4`
+decode paths) get their own specs later; they are listed here so the sequence is agreed, not so they are
+implemented in one pass.
+
 ## 10. Testing
 
 `home_screen_tests.rs`, using the same `kittest` harness the crate already uses
@@ -212,12 +230,14 @@ discovered immediately, before any visual change exists to unpick.
 
 | Test | Asserts |
 |---|---|
-| `all_templates_are_reachable` | every preset in `CATEGORIES` renders a card; total equals the category sum |
+| `every_static_preset_renders_a_card` | for each of the six static categories, the card count equals that category's `CATEGORIES` length; six categories sum to 31 |
+| `recent_category_shows_recent_documents` | "Recent" renders `recent_cards`, not the two static presets — the same rule as `new_doc_ui.rs:466-469` |
 | `narrow_window_uses_the_compact_card` | at 760 px wide the compact card draws and the dashboard does not |
 | `wide_window_uses_the_dashboard` | at 1440 px wide the dashboard draws |
-| `switching_category_keeps_the_card_count` | selecting each of the 7 categories yields exactly that category's preset count |
+| `switching_category_keeps_the_card_count` | selecting each category yields exactly that category's card count |
+| `template_cards_match_the_dialog_size` | a card rect is 164 × 112, the same as `new_doc_ui.rs:481` |
 | `nothing_clips_at_the_minimum_window` | at 760 × 480 every label rect lies inside the available rect |
-| `an_out_of_range_category_falls_back_to_recent` | `home_category = 999` renders the Recent cards and does not panic |
+| `an_out_of_range_category_falls_back_to_recent` | `home_category = 999` renders Recent and does not panic |
 
 Existing tests that must stay green: `chrome_ui.rs:380-420` (Home shows/closes, auto-show off) and
 `canvas.rs:6000-6013` (Wayland hint, removing a recent entry).
