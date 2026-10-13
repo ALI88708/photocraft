@@ -17,6 +17,9 @@ pub struct ChromeState {
     /// Home screen shown over the open documents (Options bar › Home); holds the document count
     /// when it was opened, so opening or creating a document leaves it.
     pub home: Option<usize>,
+    /// Index into `new_doc_ui::CATEGORIES` for the Home screen's Templates panel; 0 is "Recent".
+    /// Defaults to 0, so a state file written before this field existed still loads.
+    pub home_category: usize,
 }
 
 impl ChromeState {
@@ -36,7 +39,7 @@ impl ChromeState {
 
 impl Default for ChromeState {
     fn default() -> Self {
-        Self { status_info: "dimensions".into(), home: None }
+        Self { status_info: "dimensions".into(), home: None, home_category: 0 }
     }
 }
 

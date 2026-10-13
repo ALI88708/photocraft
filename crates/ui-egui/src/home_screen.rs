@@ -1,9 +1,11 @@
 //! The Home screen: the card PhotoCraft shows instead of a canvas when no document is open.
 //!
 //! The wordmark and tagline, the New… / Open… buttons, the file-drop hint (on Wayland, where
-//! winit 0.30 has no file drops, it points at File › Open and paste instead), the Recent
-//! files list and the Discord and link row — on a card 460 wide that grows with the number
-//! of recent files. The screen draws no canvas, so it lives here rather than in [`canvas`].
+//! winit 0.30 has no file drops, it points at File › Open and paste instead), the Templates
+//! gallery (every category and preset of the New Document dialog, reachable without opening
+//! the dialog first), the Recent files list and the Discord and link row — on a card 460 wide
+//! that grows with the number of recent files. The screen draws no canvas, so it lives here
+//! rather than in [`canvas`].
 
 use egui::{Rect, Sense};
 
@@ -153,5 +155,106 @@ pub(crate) fn home_recent(app: &mut PhotocraftApp, ui: &mut egui::Ui, recent: &[
         && let Err(e) = app.open_path(&path)
     {
         app.open_failed(&crate::file_open::display_name(&path), &e);
+    }
+}
+
+/// A Templates card's size: the New Document dialog's preset card, so the same preset looks like
+/// the same thing in both places.
+pub const TEMPLATE_CARD: egui::Vec2 = egui::vec2(164.0, 112.0);
+/// Templates cards per row.
+pub const TEMPLATE_COLUMNS: usize = 3;
+
+/// The category `index` names, or Recent (0) when the index is out of range.
+///
+/// The index is serialised state — a state file can hold any number — so it is resolved before
+/// use and never indexed with. Resolving it first also means the fallback is visible in the UI:
+/// the Recent tab stays underlined instead of every tab going flat.
+fn resolved_category(category: usize) -> usize {
+    if category < crate::new_doc_ui::CATEGORIES.len() { category } else { 0 }
+}
+
+/// The presets of `category`, or an empty slice when the index is out of range.
+pub fn category_presets(category: usize) -> &'static [crate::new_doc_ui::Preset] {
+    crate::new_doc_ui::CATEGORIES.get(category).map_or(&[], |c| c.1)
+}
+
+/// The Home screen's Templates panel: the New Document dialog's categories as a tab row and their
+/// presets as cards; clicking a card opens File › New with that preset applied. The categories, the
+/// cards and the Recent rule are the dialog's own — [`crate::new_doc_ui::recent_cards`] for Recent,
+/// and the dialog's card drawing for each card — so the two screens cannot drift apart.
+///
+/// An empty category (or an empty Recent) draws the tab row and nothing else — no error, no
+/// placeholder.
+pub fn templates(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let category = resolved_category(app.ui.chrome.home_category);
+    // The category tabs, drawn exactly as the dialog draws them.
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 18.0;
+        for (i, c) in crate::new_doc_ui::CATEGORIES.iter().enumerate() {
+            let on = category == i;
+            let label = egui::Label::new(egui::RichText::new(tl!(c.0)).size(13.0).color(if on { t.text } else { t.text_dim })).sense(Sense::click());
+            let r = ui.add(label);
+            if on {
+                let under = [r.rect.left_bottom() + egui::vec2(0.0, 3.0), r.rect.right_bottom() + egui::vec2(0.0, 3.0)];
+                ui.painter().line_segment(under, egui::Stroke::new(2.0, t.text));
+            }
+            if r.clicked() {
+                app.ui.chrome.home_category = i;
+            }
+        }
+    });
+    ui.add_space(6.0);
+    let units = app.session.prefs().units_and_rulers.clone();
+    let presets: Vec<crate::new_doc_ui::Card> = if category == 0 {
+        // Recent is the dialog's rule: the documents created with the dialog, then the built-in
+        // defaults they don't cover. An empty field map: no clipboard image was copied to make a
+        // card out of here, and a card's click fills the dialog's fields when there are any.
+        crate::new_doc_ui::recent_cards(&serde_json::Map::new(), &app.session.presets.recent_documents, &units)
+    } else {
+        category_presets(category).iter().copied().map(crate::new_doc_ui::Card::Builtin).collect()
+    };
+    for row in presets.chunks(TEMPLATE_COLUMNS) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            for card in row {
+                template_card(app, ui, card, &t, &units);
+            }
+        });
+        ui.add_space(8.0);
+    }
+}
+
+/// One Templates card: drawn by the New Document dialog's own card drawing — the page at the
+/// preset's aspect ratio, the preset's name (wrapped and elided so a long translation stays
+/// inside the card) and its size in the unit the preset is specified in. Clicking applies it to a
+/// fresh set of dialog fields and opens File › New, as the dialog's own card click does.
+fn template_card(
+    app: &mut PhotocraftApp,
+    ui: &mut egui::Ui,
+    card: &crate::new_doc_ui::Card,
+    t: &crate::theme::Tokens,
+    units: &photocraft_engine::prefs::UnitsAndRulers,
+) {
+    let (w, h, _) = card.size(units);
+    let name = tl!(card.title()).to_owned();
+    let size = card.size_line(units);
+    let (r, resp) = ui.allocate_exact_size(TEMPLATE_CARD, Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+    ui.painter().rect_filled(r, t.radius, if resp.hovered() { t.hover } else { t.field });
+    crate::new_doc_ui::page_icon(ui, Rect::from_center_size(egui::pos2(r.center().x, r.top() + 34.0), egui::vec2(40.0, 40.0)), w, h, t);
+    let title = crate::new_doc_ui::card_title(ui.painter(), &name, TEMPLATE_CARD.x - 12.0, t.text);
+    let elided = title.elided;
+    ui.painter().galley(egui::pos2(r.center().x, r.top() + 70.0 - title.size().y / 2.0), title, t.text);
+    ui.painter().text(egui::pos2(r.center().x, r.top() + 97.0), egui::Align2::CENTER_CENTER, &size, egui::FontId::proportional(10.5), t.text_faint);
+    // A title too long for the card shows in full on hover, as it does in the dialog.
+    let resp = if elided { resp.on_hover_text(name) } else { resp };
+    if resp.clicked() {
+        let mut fields = app.new_document_fields();
+        match card {
+            crate::new_doc_ui::Card::Builtin(p) => crate::new_doc_ui::apply_preset(&mut fields, p, units),
+            crate::new_doc_ui::Card::Recent(s) => crate::new_doc_ui::apply_settings(&mut fields, s),
+        }
+        app.ui.open_dialog(crate::state::DialogKind::NewDocument, fields);
     }
 }

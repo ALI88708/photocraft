@@ -2348,6 +2348,9 @@ mod marquee_tests;
 mod canvas_menu_tests;
 
 #[cfg(test)]
+mod home_screen_tests;
+
+#[cfg(test)]
 mod caps_lock_tests;
 
 #[cfg(test)]
