@@ -1727,7 +1727,7 @@ fn documents(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // Files opening in the background (#210) have tabs before they have documents.
     let opening = !app.jobs.opens.is_empty();
     if !opening && app.ui.chrome.shows_home(n, app.session.prefs().general.auto_show_home_screen) {
-        crate::home_screen::start_screen(app, ui);
+        crate::home_screen::screen(app, ui);
         return;
     }
     if n == 0 && !opening {

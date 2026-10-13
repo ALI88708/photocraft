@@ -1,16 +1,68 @@
-//! The Home screen: the card PhotoCraft shows instead of a canvas when no document is open.
+//! The Home screen: what PhotoCraft shows instead of a canvas when no document is open.
 //!
-//! The wordmark and tagline, the New… / Open… buttons, the file-drop hint (on Wayland, where
-//! winit 0.30 has no file drops, it points at File › Open and paste instead), the Templates
-//! gallery (every category and preset of the New Document dialog, reachable without opening
-//! the dialog first), the Recent files list and the Discord and link row — on a card 460 wide
-//! that grows with the number of recent files. The screen draws no canvas, so it lives here
-//! rather than in [`canvas`].
+//! Two layouts, one set of controls. A canvas narrower than [`DASHBOARD_MIN_WIDTH`] gets the
+//! centred 460 wide card, unchanged: the wordmark and tagline, the New… / Open… buttons, the
+//! file-drop hint (on Wayland, where winit 0.30 has no file drops, it points at File › Open and
+//! paste instead), the Recent files list and the Discord and link row, on a card that grows with
+//! the number of recent files. A wider one gets the three-column dashboard — the actions and
+//! the drop hint on the left, the Templates gallery (every category and preset of the New
+//! Document dialog, reachable without opening the dialog first) in the middle, the recent files,
+//! the Discord button and the links on the right — and its body scrolls, so a short window
+//! never cuts a row off.
+//!
+//! The screen draws no canvas, so it lives here rather than in [`canvas`].
 
 use egui::{Rect, Sense};
 
 use crate::PhotocraftApp;
 use crate::canvas::paint_dots;
+
+/// Below this width of canvas area the Home screen stays a centred card; at or above it, the
+/// three-column dashboard.
+///
+/// The wide side has to be wide enough for what it draws: [`RAIL_WIDTH`] + [`GRID_WIDTH`] +
+/// [`RIGHT_WIDTH`] = 968, plus the 10 points egui's solid scroll bar reserves when the body is
+/// taller than the window. 980 is the first width that fits all of it, and it keeps the 760
+/// point minimum window (`apps/photocraft/src/main.rs:76`) firmly on the card.
+pub const DASHBOARD_MIN_WIDTH: f32 = 980.0;
+
+/// Which Home screen a canvas area gets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layout {
+    /// Today's centred card, for a canvas too narrow for the three columns.
+    Compact,
+    /// The three-column dashboard: actions, templates, recents and links.
+    Dashboard,
+}
+
+/// The dashboard's left rail: New, Open and the file-drop hint.
+pub(crate) const RAIL_WIDTH: f32 = 200.0;
+/// The dashboard's right column: the recent files, the Discord button and the link row.
+pub(crate) const RIGHT_WIDTH: f32 = 260.0;
+/// The gap [`templates`] leaves between two cards.
+const TEMPLATE_GAP: f32 = 8.0;
+/// The width the templates grid needs: `TEMPLATE_COLUMNS` cards of `TEMPLATE_CARD` wide and the
+/// gaps between them. The centre column is never narrower — the cards are allocated at a fixed
+/// size, so a narrower column would draw them over each other.
+pub(crate) const GRID_WIDTH: f32 = TEMPLATE_COLUMNS as f32 * TEMPLATE_CARD.x + (TEMPLATE_COLUMNS as f32 - 1.0) * TEMPLATE_GAP;
+
+// The threshold is the width all three columns and the scroll bar's reserve add up to, so it is
+// checked while compiling: lowering a column or the threshold would draw the last templates card
+// over the right one.
+const _: () = assert!(DASHBOARD_MIN_WIDTH >= RAIL_WIDTH + GRID_WIDTH + RIGHT_WIDTH + 10.0);
+
+/// Which Home screen a canvas area `available_width` wide gets.
+pub fn layout_for(available_width: f32) -> Layout {
+    if available_width >= DASHBOARD_MIN_WIDTH { Layout::Dashboard } else { Layout::Compact }
+}
+
+/// The Home screen: today's card when the canvas is narrow, the dashboard when it is not.
+pub fn screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    match layout_for(ui.available_rect_before_wrap().width()) {
+        Layout::Compact => start_screen(app, ui),
+        Layout::Dashboard => full_dashboard(app, ui),
+    }
+}
 
 pub fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = crate::theme::Tokens::get(ui.ctx());
@@ -24,18 +76,7 @@ pub fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let open_label = crate::shortcuts::command_label(app, "Open…", "file.open");
     ui.scope_builder(egui::UiBuilder::new().max_rect(card), |ui| {
         ui.vertical_centered(|ui| {
-            ui.horizontal(|ui| {
-                let title = ui.painter().layout_no_wrap(tl!("PhotoCraft").into(), crate::theme::semibold(38.0), t.text);
-                let by = ui.painter().layout_no_wrap(tl!("open source").into(), egui::FontId::proportional(13.0), t.text_faint);
-                let total = title.size().x + by.size().x + 10.0;
-                ui.add_space(((card.width() - total) / 2.0).max(0.0));
-                let (r, _) = ui.allocate_exact_size(title.size(), Sense::hover());
-                ui.painter().galley(r.min, title, t.text);
-                let (r2, _) = ui.allocate_exact_size(egui::vec2(by.size().x + 10.0, r.height()), Sense::hover());
-                ui.painter().galley(egui::pos2(r2.left() + 10.0, r.bottom() - by.size().y - 8.0), by, t.text_faint);
-            });
-            ui.add_space(6.0);
-            ui.label(egui::RichText::new(tl!("Create a new document or open an existing file.")).color(t.text_dim).size(14.0));
+            header(ui, &t, card.width());
             ui.add_space(22.0);
             ui.horizontal(|ui| {
                 ui.add_space(((card.width() - 2.0 * 190.0 - 12.0) / 2.0).max(0.0));
@@ -69,6 +110,95 @@ pub fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     });
 }
 
+/// The wordmark with its "open source" tag and the line under it: the header both Home screens
+/// show, centred in the `width` they are given.
+fn header(ui: &mut egui::Ui, t: &crate::theme::Tokens, width: f32) {
+    ui.allocate_ui_with_layout(egui::vec2(width, 0.0), egui::Layout::top_down(egui::Align::Center), |ui| {
+        ui.horizontal(|ui| {
+            let title = ui.painter().layout_no_wrap(tl!("PhotoCraft").into(), crate::theme::semibold(38.0), t.text);
+            let by = ui.painter().layout_no_wrap(tl!("open source").into(), egui::FontId::proportional(13.0), t.text_faint);
+            // A `horizontal` takes the whole row whatever the layout above it is, so the
+            // wordmark is centred in it by hand.
+            ui.add_space(((width - title.size().x - by.size().x - 10.0) / 2.0).max(0.0));
+            let (r, _) = ui.allocate_exact_size(title.size(), Sense::hover());
+            ui.painter().galley(r.min, title, t.text);
+            let (r2, _) = ui.allocate_exact_size(egui::vec2(by.size().x + 10.0, r.height()), Sense::hover());
+            ui.painter().galley(egui::pos2(r2.left() + 10.0, r.bottom() - by.size().y - 8.0), by, t.text_faint);
+        });
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new(tl!("Create a new document or open an existing file.")).color(t.text_dim).size(14.0));
+    });
+}
+
+/// The three-column dashboard. Every control the card above shows is here, in three columns
+/// instead of one stack: the layout changed, the feature set did not.
+///
+/// The header stays put at the top and the columns scroll under it, so a window shorter than
+/// the templates grid scrolls rather than cutting rows off.
+fn full_dashboard(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let area = ui.available_rect_before_wrap();
+    paint_dots(ui, area, app.session.prefs().interface.show_canvas_dots);
+    let width = ui.available_width();
+    header(ui, &t, width);
+    ui.add_space(16.0);
+    // File › Open Recent, newest first (on the web there are no paths to reopen).
+    let recent: Vec<String> = if cfg!(target_arch = "wasm32") { Vec::new() } else { app.ui.recent_files.iter().take(HOME_RECENT).cloned().collect() };
+    egui::ScrollArea::vertical().id_salt("home-dashboard").show(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            // The columns are laid edge to edge, so the item spacing would come out of the
+            // templates grid; the slack of a wider window goes between the grid and the right
+            // column instead.
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.vertical(|ui| {
+                ui.set_width(RAIL_WIDTH);
+                actions(app, ui, &t);
+            });
+            ui.vertical(|ui| {
+                // The grid is the one column that cannot be squeezed: its cards are allocated
+                // at a fixed size, so the column is exactly as wide as they need.
+                ui.set_width(GRID_WIDTH);
+                templates(app, ui);
+            });
+            // What is left of a wide window goes between the grid and the right column, which
+            // stays against the edge of the canvas.
+            ui.add_space((ui.available_width() - RIGHT_WIDTH).max(0.0));
+            ui.vertical(|ui| {
+                ui.set_width(RIGHT_WIDTH);
+                if !recent.is_empty() {
+                    home_recent(app, ui, &recent);
+                    ui.add_space(20.0);
+                }
+                let width = ui.available_width();
+                crate::links::discord_button(app, ui, width);
+                ui.add_space(10.0);
+                crate::links::link_row(app, ui);
+            });
+        });
+    });
+}
+
+/// The left rail: New, Open and the file-drop hint, the card's actions in a column.
+fn actions(app: &mut PhotocraftApp, ui: &mut egui::Ui, t: &crate::theme::Tokens) {
+    let new_label = crate::shortcuts::command_label(app, "New document…", "file.new");
+    let open_label = crate::shortcuts::command_label(app, "Open…", "file.open");
+    let width = ui.available_width();
+    if crate::widgets::primary_button(ui, &new_label, width).clicked() {
+        let fields = app.new_document_fields();
+        app.ui.open_dialog(crate::state::DialogKind::NewDocument, fields);
+    }
+    if crate::widgets::secondary_button(ui, &open_label, width).clicked() {
+        let _ = app.open_dialog_file();
+    }
+    ui.add_space(20.0);
+    // The same hint the card shows under its buttons, wrapped to the rail.
+    ui.horizontal_top(|ui| {
+        let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), Sense::hover());
+        crate::icons::paint(ui, r, "image", 15.0, t.text_faint);
+        ui.add(egui::Label::new(egui::RichText::new(start_screen_drop_hint(app)).color(t.text_faint).size(12.5)).wrap());
+    });
+}
+
 /// Wayland has no native file drops (winit 0.30, #386), so the hint offers File › Open and paste.
 pub(crate) fn start_screen_drop_hint(app: &PhotocraftApp) -> std::borrow::Cow<'static, str> {
     if app.services.is_wayland {
@@ -82,19 +212,25 @@ pub(crate) fn start_screen_drop_hint(app: &PhotocraftApp) -> std::borrow::Cow<'s
 pub const HOME_RECENT: usize = 6;
 /// Height of one Home-screen recent-file row.
 pub const HOME_RECENT_ROW: f32 = 30.0;
+/// How wide a recent-file row is on the card; the dashboard's right column is narrower and the
+/// rows take the width they are given, so they do not reach over the templates.
+const HOME_RECENT_WIDTH: f32 = 380.0;
 
 /// The Home screen's "Recent" list: file name, its folder on the right, click to open. The
 /// hovered row shows a × that takes it off the list, and right-click offers Remove from Recent
 /// and Clear Recent Files (#2691).
 pub(crate) fn home_recent(app: &mut PhotocraftApp, ui: &mut egui::Ui, recent: &[String]) {
     let t = crate::theme::Tokens::get(ui.ctx());
-    let width = 380.0;
+    let width = ui.available_width().min(HOME_RECENT_WIDTH);
     ui.horizontal(|ui| {
         // Line the heading up with the file icons.
         ui.add_space(((ui.available_width() - width) / 2.0).max(0.0) + 8.0);
         ui.label(egui::RichText::new(tl!("Recent")).font(crate::theme::semibold(12.5)).color(t.text_dim));
     });
     ui.add_space(4.0);
+    // What is left of the row beside the folder: the card has always given the name 170 of its
+    // 380, a narrower column leaves the folder a little more.
+    let name_max = 170.0f32.min(width * 0.55);
     let mut open = None;
     let mut remove = None;
     let mut clear = false;
@@ -112,7 +248,7 @@ pub(crate) fn home_recent(app: &mut PhotocraftApp, ui: &mut egui::Ui, recent: &[
         let icon = Rect::from_center_size(egui::pos2(row.left() + 16.0, row.center().y), egui::vec2(16.0, 16.0));
         crate::icons::paint(ui, icon, "file", 14.0, t.text_dim);
         let x = row.left() + 32.0;
-        let name_g = crate::tab_strip::elided(ui, &name, egui::FontId::proportional(12.5), t.text, 170.0);
+        let name_g = crate::tab_strip::elided(ui, &name, egui::FontId::proportional(12.5), t.text, name_max);
         let name_w = name_g.size().x;
         ui.painter().galley(egui::pos2(x, row.center().y - name_g.size().y / 2.0), name_g, t.text);
         let folder_max = (right - (x + name_w + 14.0)).max(0.0);

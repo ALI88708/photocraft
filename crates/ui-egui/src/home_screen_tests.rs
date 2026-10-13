@@ -1,7 +1,11 @@
-//! Home screen: the Templates panel and the category state behind it.
+//! Home screen: the Templates panel, the category state behind it, and the routing between
+//! today's card and the dashboard.
 
-use egui::vec2;
-use egui_kittest::{Harness, kittest::Queryable};
+use egui::{Pos2, Rect, vec2};
+use egui_kittest::{
+    Harness,
+    kittest::{By, NodeT, Queryable},
+};
 use photocraft_engine::document_preset_cmds::DocumentSettings;
 
 use crate::PhotocraftApp;
@@ -44,6 +48,95 @@ fn harness(app: PhotocraftApp) -> Harness<'static, PhotocraftApp> {
 /// Cards laid out for `category`: one per preset of the category whose name is on a card.
 fn cards(h: &Harness<'static, PhotocraftApp>, category: usize) -> usize {
     CATEGORIES.get(category).into_iter().flat_map(|c| c.1).filter(|p| h.query_all_by_label(p.0).count() == 1).count()
+}
+
+/// The Home screen over `app` in a `size` window, recording the area it was given.
+fn screen_harness(app: PhotocraftApp, size: egui::Vec2, theme: crate::theme::ThemeKind) -> Harness<'static, (PhotocraftApp, Option<Rect>, bool)> {
+    // The harness draws a frame before the theme is set, and the theme is what binds the
+    // semibold font family the wordmark uses, so the screen waits for it.
+    let mut h = Harness::builder().with_size(size).build_ui_state(
+        |ui, (app, area, ready): &mut (PhotocraftApp, Option<Rect>, bool)| {
+            if !*ready {
+                return;
+            }
+            *area = Some(ui.available_rect_before_wrap());
+            home_screen::screen(app, ui);
+        },
+        (app, None, false),
+    );
+    PhotocraftApp::setup_context(&h.ctx, theme);
+    h.state_mut().2 = true;
+    h.run_steps(2);
+    h
+}
+
+/// The area the Home screen was given to draw in.
+fn area(h: &Harness<'_, (PhotocraftApp, Option<Rect>, bool)>) -> Rect {
+    h.state().1.expect("the screen recorded the area it drew in")
+}
+
+/// [`screen_harness`] with the window widened until the Home screen is given exactly `width`
+/// points: egui's test frame takes 8 off every side, so the inset is measured from the first
+/// frame instead of guessed at.
+fn harness_at_width(app: PhotocraftApp, width: f32, height: f32, theme: crate::theme::ThemeKind) -> Harness<'static, (PhotocraftApp, Option<Rect>, bool)> {
+    let mut h = screen_harness(app, vec2(width, height), theme);
+    let inset = width - area(&h).width();
+    assert!(inset > 0.0, "the harness insets the area it hands the screen");
+    h.set_size(vec2(width + inset, height));
+    h.run_steps(2);
+    assert!((area(&h).width() - width).abs() < 0.5, "the screen is {width} wide, got {:?}", area(&h));
+    h
+}
+
+/// Every rect egui painted this frame, each clipped to the clip rect it was painted in: a
+/// shape a scroll area or the panel's edge cuts only shows inside that clip rect.
+fn painted_rects(h: &Harness<'_, (PhotocraftApp, Option<Rect>, bool)>) -> Vec<Rect> {
+    h.output()
+        .shapes
+        .iter()
+        .flat_map(|clipped| shape_rects(&clipped.shape).into_iter().map(move |r| r.intersect(clipped.clip_rect)))
+        .filter(|r| !r.is_negative())
+        .collect()
+}
+
+/// The rect a painted [`egui::epaint::Shape`] covers.
+fn shape_rects(shape: &egui::epaint::Shape) -> Vec<Rect> {
+    use egui::epaint::Shape;
+    match shape {
+        Shape::Noop | Shape::Callback(_) => vec![],
+        Shape::Vec(items) => items.iter().flat_map(shape_rects).collect(),
+        Shape::Rect(r) => vec![r.rect],
+        Shape::Circle(c) => vec![Rect::from_center_size(c.center, vec2(2.0 * c.radius, 2.0 * c.radius))],
+        Shape::Ellipse(e) => vec![Rect::from_center_size(e.center, 2.0 * e.radius)],
+        Shape::LineSegment { points, stroke } => vec![points_rect(points.iter().copied()).expand(stroke.width / 2.0)],
+        Shape::Path(p) => vec![points_rect(p.points.iter().copied())],
+        Shape::Text(t) => vec![Rect::from_min_size(t.pos, t.galley.size())],
+        Shape::QuadraticBezier(b) => vec![points_rect(b.points)],
+        Shape::CubicBezier(b) => vec![points_rect(b.points)],
+        Shape::Mesh(mesh) => vec![points_rect(mesh.vertices.iter().map(|v| v.pos))],
+    }
+}
+
+/// The rect a run of points covers, or a negative rect for none.
+fn points_rect(points: impl IntoIterator<Item = Pos2>) -> Rect {
+    let mut min = Pos2::new(f32::INFINITY, f32::INFINITY);
+    let mut max = Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
+    for p in points {
+        min = min.min(p);
+        max = max.max(p);
+    }
+    Rect::from_min_max(min, max)
+}
+
+/// The label and rect of every widget egui put in the accessibility tree: every button,
+/// label and row the Home screen allocated.
+fn widget_rects(h: &Harness<'_, (PhotocraftApp, Option<Rect>, bool)>) -> Vec<(String, Rect)> {
+    h.query_all(By::new()).filter_map(|n| n.accesskit_node().label().map(|l| (l, n.rect()))).collect()
+}
+
+/// The rect of the newest "Custom" card, the last one in the Recent grid.
+fn last_card(h: &Harness<'_, (PhotocraftApp, Option<Rect>, bool)>) -> Rect {
+    h.query_all_by_label("Custom").last().expect("a card per document recently created with the dialog").rect()
 }
 
 #[test]
@@ -120,4 +213,96 @@ fn clicking_a_card_opens_new_document_with_that_preset() {
     let fields = &d.fields;
     assert_eq!((fields["width"].as_u64(), fields["height"].as_u64()), (Some(3840), Some(2160)));
     assert_eq!((fields["resolution"].as_f64(), fields["__preset"].as_str()), (Some(72.0), Some("UHD 4K")));
+}
+
+/// The wide side owns the boundary: one point under it is still the card, one point on it is
+/// the dashboard. `home_screen.rs` checks while compiling that the width it routes to is wide
+/// enough for the three columns it draws.
+#[test]
+fn the_dashboard_boundary_is_owned_by_the_wide_side() {
+    use home_screen::{Layout, layout_for};
+    assert_eq!(layout_for(979.9), Layout::Compact);
+    assert_eq!(layout_for(980.0), Layout::Dashboard);
+    assert_eq!(layout_for(1440.0), Layout::Dashboard);
+}
+
+/// The minimum window (`apps/photocraft/src/main.rs:76`) in the Pro theme, the default one
+/// and a non-Pro one: today's card, with every control and every painted rect inside the
+/// area the screen was given. The dashboard scrolls rather than clipping.
+#[test]
+fn a_window_at_the_minimum_size_does_not_clip() {
+    for theme in [crate::theme::ThemeKind::Pro, crate::theme::ThemeKind::default(), crate::theme::ThemeKind::Studio] {
+        let h = screen_harness(app(), vec2(760.0, 480.0), theme);
+        let area = area(&h);
+        assert!(h.query_by_label_contains("New document").is_some(), "{theme:?}: the card's buttons are drawn");
+        for r in painted_rects(&h) {
+            assert!(area.contains_rect(r), "{theme:?}: painted {r:?} outside {area:?}");
+        }
+        for (label, r) in widget_rects(&h) {
+            assert!(area.contains_rect(r), "{theme:?}: {label:?} at {r:?} is cut off by {area:?}");
+        }
+    }
+    // The dashboard body scrolls instead of clipping: at the routing threshold and 480 tall,
+    // ten recently created documents make a grid four rows deep, the last row starts below
+    // the fold, and a wheel event brings it on screen.
+    let mut many = app();
+    many.session.presets.recent_documents = (0..10).map(|i| recent(101 + i * 37, 67 + i * 11, 90.0)).collect();
+    let mut h = harness_at_width(many, home_screen::DASHBOARD_MIN_WIDTH, 480.0, crate::theme::ThemeKind::Pro);
+    let area = area(&h);
+    for r in painted_rects(&h) {
+        assert!(area.contains_rect(r), "painted {r:?} outside {area:?}");
+    }
+    assert!(last_card(&h).bottom() > area.bottom(), "the last row is below the fold at 480 tall");
+    h.hover_at(area.center());
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -300.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(3);
+    assert!(last_card(&h).bottom() <= area.bottom(), "the body scrolls: the last row is on screen after a wheel");
+}
+
+/// A wide window draws the dashboard: every control the card has, in three columns, and the
+/// templates grid still fits its column at the width that routes to it.
+#[test]
+fn a_wide_window_uses_the_dashboard() {
+    let mut home = app();
+    for name in ["one.png", "two.psd"] {
+        home.push_recent(&format!("/tmp/photocraft-home/{name}"));
+    }
+    let h = screen_harness(home, vec2(1440.0, 900.0), crate::theme::ThemeKind::Pro);
+    for label in [
+        "New document…",
+        "Open…",
+        "Drop an image or PSD anywhere to open it.",
+        "one.png",
+        "Join us on Discord",
+        "PhotoCraft website",
+        "GitHub",
+        "ArtCraft",
+        "Web",
+        "Default PhotoCraft Size",
+    ] {
+        assert!(h.query_all_by_label_contains(label).next().is_some(), "{label:?} is on the dashboard");
+    }
+    // Three columns: the actions on the left, the templates in the middle, recents and links
+    // on the right.
+    let rail = h.get_by_label_contains("New document").rect();
+    let grid = h.get_by_label("Default PhotoCraft Size").rect();
+    let recents = h.get_by_label("one.png").rect();
+    let right = h.get_by_label("Join us on Discord").rect();
+    assert!(rail.left() < grid.left(), "the rail is left of the templates: {rail:?} vs {grid:?}");
+    assert!(grid.left() < recents.left(), "the right column is right of the templates: {recents:?} vs {grid:?}");
+    assert!((recents.left() - right.left()).abs() < 1.0, "the recents and the links share the right column: {recents:?} vs {right:?}");
+
+    // At the routing threshold the grid still fits the column between the rail and the right
+    // column: three cards and the two gaps between them.
+    let mut photo = app();
+    photo.ui.chrome.home_category = 1; // Photo: six presets, two rows of three
+    let h = harness_at_width(photo, home_screen::DASHBOARD_MIN_WIDTH, 900.0, crate::theme::ThemeKind::Pro);
+    let third = h.get_by_label("Landscape, 10 x 8").rect();
+    let links = h.get_by_label("Join us on Discord").rect();
+    assert!(third.right() <= links.left(), "the third card fits the column at the threshold: {third:?} reaches into {links:?}");
 }
