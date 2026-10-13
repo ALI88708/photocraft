@@ -141,7 +141,7 @@ fn last_card(h: &Harness<'_, (PhotocraftApp, Option<Rect>, bool)>) -> Rect {
 
 #[test]
 fn chrome_category_defaults_and_round_trips() {
-    assert_eq!(ChromeState::default().home_category, 0);
+    assert_eq!(ChromeState::default().home_category, home_screen::DEFAULT_CATEGORY);
     let json = serde_json::to_string(&ChromeState { home_category: 4, ..Default::default() }).unwrap();
     assert_eq!(serde_json::from_str::<ChromeState>(&json).unwrap().home_category, 4);
 }
@@ -149,7 +149,7 @@ fn chrome_category_defaults_and_round_trips() {
 #[test]
 fn a_state_file_without_the_category_still_loads() {
     let loaded: ChromeState = serde_json::from_str(r#"{"statusInfo":"dimensions"}"#).unwrap();
-    assert_eq!(loaded.home_category, 0);
+    assert_eq!(loaded.home_category, home_screen::DEFAULT_CATEGORY);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn every_static_preset_renders_a_card() {
         assert_eq!(cards(&h, i), presets.len(), "{name}: a card per preset");
         total += presets.len();
     }
-    assert_eq!(total, 31, "every preset outside Recent is reachable from the Home screen");
+    assert_eq!(total, 33, "every preset outside Recent is reachable from the Home screen");
 }
 
 #[test]
@@ -171,6 +171,8 @@ fn recent_category_shows_recent_documents() {
     // the dialog first, then the built-in defaults they don't already cover. A card is named
     // after the preset it matches, so a document at a size no preset lists reads "Custom".
     let mut h = harness(app());
+    h.state_mut().ui.chrome.home_category = 0;
+    h.run_steps(2);
     assert_eq!(h.query_all_by_label("Custom").count(), 0, "no document created with the dialog yet");
     assert!(h.query_by_label("Default PhotoCraft Size").is_some(), "the dialog's Recent defaults still show");
 
@@ -181,14 +183,34 @@ fn recent_category_shows_recent_documents() {
 }
 
 #[test]
-fn an_out_of_range_category_falls_back_to_recent() {
+fn the_panel_opens_on_a_populated_category() {
+    // Recent on a fresh install is two default sizes, which reads as an empty Home screen.
+    let h = harness(app());
+    assert_eq!(h.state().ui.chrome.home_category, home_screen::DEFAULT_CATEGORY);
+    assert_eq!(home_screen::category_presets(home_screen::DEFAULT_CATEGORY).len(), 6, "the default category lists presets");
+    assert!(h.query_by_label("Landscape, 6 x 4").is_some(), "so the panel opens on a category with real presets in it");
+}
+
+#[test]
+fn the_editing_chrome_is_hidden_while_home_is_up() {
+    // No document is open, so the tool strip, the tool options and the panels dock would be a
+    // column of dead controls: no tool acts without a document to act on. The menu bar and the
+    // status bar stay, because they still open documents and report the zoom.
+    let mut h = harness(app());
+    assert_eq!(h.state().session.documents().len(), 0, "no document is open");
+    assert!(h.state_mut().ui.chrome.shows_home(0, true), "Home is up");
+    // The panel decides this from the same two facts, so a state where Home is down hides nothing.
+    assert!(h.state_mut().ui.chrome.shows_home(0, false) == false, "the Home preference gates it");
+}
+
+#[test]
+fn an_out_of_range_category_falls_back_to_the_default() {
     // 999 is what a hand-edited state file can leave behind.
     let mut app = app();
     app.ui.chrome.home_category = 999;
-    app.session.presets.recent_documents = vec![recent(777, 333, 100.0)];
     let h = harness(app);
     assert!(home_screen::category_presets(999).is_empty(), "an index past the last category has no presets to look up");
-    assert!(h.query_by_label("Custom").is_some(), "999 draws Recent, as 0 does");
+    assert!(h.query_by_label("Photo").is_some(), "999 draws the default category's first preset");
     assert!(h.query_by_label("Film & Video").is_some(), "the category row still offers every category");
 }
 
@@ -246,6 +268,9 @@ fn a_window_at_the_minimum_size_does_not_clip() {
     // ten recently created documents make a grid four rows deep, the last row starts below
     // the fold, and a wheel event brings it on screen.
     let mut many = app();
+    // Recent: the cards are named after the documents created with the dialog, and ten of them
+    // make a grid four rows deep.
+    many.ui.chrome.home_category = 0;
     many.session.presets.recent_documents = (0..10).map(|i| recent(101 + i * 37, 67 + i * 11, 90.0)).collect();
     let mut h = harness_at_width(many, home_screen::DASHBOARD_MIN_WIDTH, 480.0, crate::theme::ThemeKind::Pro);
     let area = area(&h);
@@ -283,14 +308,16 @@ fn a_wide_window_uses_the_dashboard() {
         "GitHub",
         "ArtCraft",
         "Web",
-        "Default PhotoCraft Size",
+        // The default category is Photo, so its presets are the ones on the dashboard by default.
+        "Landscape, 6 x 4",
+        "Portrait, 5 x 7",
     ] {
         assert!(h.query_all_by_label_contains(label).next().is_some(), "{label:?} is on the dashboard");
     }
     // Three columns: the actions on the left, the templates in the middle, recents and links
     // on the right.
     let rail = h.get_by_label_contains("New document").rect();
-    let grid = h.get_by_label("Default PhotoCraft Size").rect();
+    let grid = h.get_by_label("Landscape, 6 x 4").rect();
     let recents = h.get_by_label("one.png").rect();
     let right = h.get_by_label("Join us on Discord").rect();
     assert!(rail.left() < grid.left(), "the rail is left of the templates: {rail:?} vs {grid:?}");

@@ -39,7 +39,7 @@ impl ChromeState {
 
 impl Default for ChromeState {
     fn default() -> Self {
-        Self { status_info: "dimensions".into(), home: None, home_category: 0 }
+        Self { status_info: "dimensions".into(), home: None, home_category: crate::home_screen::DEFAULT_CATEGORY }
     }
 }
 

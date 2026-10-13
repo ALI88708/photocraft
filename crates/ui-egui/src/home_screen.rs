@@ -300,13 +300,20 @@ pub const TEMPLATE_CARD: egui::Vec2 = egui::vec2(164.0, 112.0);
 /// Templates cards per row.
 pub const TEMPLATE_COLUMNS: usize = 3;
 
-/// The category `index` names, or Recent (0) when the index is out of range.
+/// The category the panel opens on: Photo (1).
+///
+/// Not Recent (0). Recent is documents this machine created, so on a fresh install it is two
+/// default sizes and the Home screen looks empty; Photo is the category most people open a blank
+/// document from, and it lists six. Recent stays one click away on the tab row.
+pub const DEFAULT_CATEGORY: usize = 1;
+
+/// The category `index` names, or [`DEFAULT_CATEGORY`] when the index is out of range.
 ///
 /// The index is serialised state — a state file can hold any number — so it is resolved before
 /// use and never indexed with. Resolving it first also means the fallback is visible in the UI:
-/// the Recent tab stays underlined instead of every tab going flat.
+/// the tab stays underlined instead of every tab going flat.
 fn resolved_category(category: usize) -> usize {
-    if category < crate::new_doc_ui::CATEGORIES.len() { category } else { 0 }
+    if category < crate::new_doc_ui::CATEGORIES.len() { category } else { DEFAULT_CATEGORY }
 }
 
 /// The presets of `category`, or an empty slice when the index is out of range.
@@ -350,6 +357,11 @@ pub fn templates(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     } else {
         category_presets(category).iter().copied().map(crate::new_doc_ui::Card::Builtin).collect()
     };
+    if presets.is_empty() {
+        // A category with no presets, or Recent on a machine that has created none. The tab row is
+        // still there, so the next category is one click away.
+        return;
+    }
     for row in presets.chunks(TEMPLATE_COLUMNS) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
@@ -374,7 +386,9 @@ fn template_card(
 ) {
     let (w, h, _) = card.size(units);
     let name = tl!(card.title()).to_owned();
-    let size = card.size_line(units);
+    // `size_line` reads the dialog's fields only to resolve the Clipboard preset's unit, and the
+    // Home screen offers no Clipboard preset, so an empty map gives the same answer.
+    let size = card.size_line(units, &serde_json::Map::new());
     let (r, resp) = ui.allocate_exact_size(TEMPLATE_CARD, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
     ui.painter().rect_filled(r, t.radius, if resp.hovered() { t.hover } else { t.field });
