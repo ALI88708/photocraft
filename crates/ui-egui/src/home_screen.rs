@@ -21,10 +21,10 @@ use crate::canvas::paint_dots;
 /// three-column dashboard.
 ///
 /// The wide side has to be wide enough for what it draws: [`RAIL_WIDTH`] + [`GRID_WIDTH`] +
-/// [`RIGHT_WIDTH`] = 968, plus the 10 points egui's solid scroll bar reserves when the body is
-/// taller than the window. 980 is the first width that fits all of it, and it keeps the 760
-/// point minimum window (`apps/photocraft/src/main.rs:76`) firmly on the card.
-pub const DASHBOARD_MIN_WIDTH: f32 = 980.0;
+/// [`RIGHT_WIDTH`] plus the two [`COLUMN_GAP`]s = 1024, plus the 10 points egui's solid scroll bar
+/// reserves when the body is taller than the window. 1040 is the first width that fits all of it,
+/// and it keeps the 760 point minimum window (`apps/photocraft/src/main.rs:76`) firmly on the card.
+pub const DASHBOARD_MIN_WIDTH: f32 = 1040.0;
 
 /// Which Home screen a canvas area gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,8 +37,10 @@ pub enum Layout {
 
 /// The dashboard's left rail: New, Open and the file-drop hint.
 pub(crate) const RAIL_WIDTH: f32 = 200.0;
-/// The dashboard's right column: the recent files, the Discord button and the link row.
+/// The dashboard's right column: the recent files and the settings.
 pub(crate) const RIGHT_WIDTH: f32 = 260.0;
+/// The space between two dashboard columns.
+const COLUMN_GAP: f32 = 28.0;
 /// The gap [`templates`] leaves between two cards.
 const TEMPLATE_GAP: f32 = 8.0;
 /// The width the templates grid needs: `TEMPLATE_COLUMNS` cards of `TEMPLATE_CARD` wide and the
@@ -49,7 +51,7 @@ pub(crate) const GRID_WIDTH: f32 = TEMPLATE_COLUMNS as f32 * TEMPLATE_CARD.x + (
 // The threshold is the width all three columns and the scroll bar's reserve add up to, so it is
 // checked while compiling: lowering a column or the threshold would draw the last templates card
 // over the right one.
-const _: () = assert!(DASHBOARD_MIN_WIDTH >= RAIL_WIDTH + GRID_WIDTH + RIGHT_WIDTH + 10.0);
+const _: () = assert!(DASHBOARD_MIN_WIDTH >= RAIL_WIDTH + GRID_WIDTH + RIGHT_WIDTH + COLUMN_GAP * 2.0 + 10.0);
 
 /// Which Home screen a canvas area `available_width` wide gets.
 pub fn layout_for(available_width: f32) -> Layout {
@@ -102,10 +104,11 @@ pub fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 ui.add_space(22.0);
                 home_recent(app, ui, &recent);
             }
+            // The community links and the Discord button are not on the screen you land on: they
+            // live in the app's own menus. The card shows the settings instead, as the dashboard
+            // does, so the two layouts offer the same things.
             ui.add_space(26.0);
-            crate::links::discord_button(app, ui, 190.0);
-            ui.add_space(10.0);
-            crate::links::link_row(app, ui);
+            settings(app, ui, &t);
         });
     });
 }
@@ -147,35 +150,73 @@ fn full_dashboard(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().id_salt("home-dashboard").show(ui, |ui| {
         ui.horizontal_top(|ui| {
             // The columns are laid edge to edge, so the item spacing would come out of the
-            // templates grid; the slack of a wider window goes between the grid and the right
-            // column instead.
+            // templates grid; it is zeroed and the gaps below are explicit instead.
             ui.spacing_mut().item_spacing.x = 0.0;
+            // The three columns are centred as a group. A wide window has slack to spend, and
+            // pushing the last column against the window edge instead left a void between the
+            // templates and the settings that read as a mistake rather than as space.
+            let total = RAIL_WIDTH + GRID_WIDTH + RIGHT_WIDTH + COLUMN_GAP * 2.0;
+            ui.add_space(((ui.available_width() - total) / 2.0).max(0.0));
             ui.vertical(|ui| {
                 ui.set_width(RAIL_WIDTH);
                 actions(app, ui, &t);
             });
+            ui.add_space(COLUMN_GAP);
             ui.vertical(|ui| {
                 // The grid is the one column that cannot be squeezed: its cards are allocated
                 // at a fixed size, so the column is exactly as wide as they need.
                 ui.set_width(GRID_WIDTH);
                 templates(app, ui);
             });
-            // What is left of a wide window goes between the grid and the right column, which
-            // stays against the edge of the canvas.
-            ui.add_space((ui.available_width() - RIGHT_WIDTH).max(0.0));
+            ui.add_space(COLUMN_GAP);
             ui.vertical(|ui| {
                 ui.set_width(RIGHT_WIDTH);
                 if !recent.is_empty() {
                     home_recent(app, ui, &recent);
                     ui.add_space(20.0);
                 }
-                let width = ui.available_width();
-                crate::links::discord_button(app, ui, width);
-                ui.add_space(10.0);
-                crate::links::link_row(app, ui);
+                settings(app, ui, &t);
             });
         });
     });
+}
+
+/// The dashboard's right column under the recent files: the settings a person wants before they
+/// start working rather than after — the theme they work in, the language the UI is in, and the
+/// way Preferences opens.
+///
+/// This replaces the Discord button and the link row the card shows. Those point at the project's
+/// community, which belongs in the app's own menus rather than on the screen you land on.
+fn settings(app: &mut PhotocraftApp, ui: &mut egui::Ui, t: &crate::theme::Tokens) {
+    let width = ui.available_width();
+    ui.label(egui::RichText::new(tl!("Settings")).font(crate::theme::semibold(12.5)).color(t.text_dim));
+    ui.add_space(6.0);
+
+    // The theme: the current one, and the next one on a click, the way the title bar's theme
+    // button already cycles them.
+    let current = app.ui.theme;
+    ui.horizontal(|ui| {
+        let label = egui::RichText::new(current.label()).size(12.0).color(t.text);
+        if ui.add(egui::Button::new(label).min_size(egui::vec2(width - 86.0, 30.0))).clicked() {
+            let next = current.next();
+            if let Err(e) = app.run("prefs.set", serde_json::json!({ "path": "interface.theme", "value": next.id() })) {
+                let template = "Could not change the theme: {error}";
+                app.ui.status = crate::i18n::fmt(tl!(template), &[("error", &e)]);
+                app.ui.status_error = true;
+            }
+        }
+        // A label for the gesture: the button changes the theme, it does not open a picker.
+        ui.label(egui::RichText::new(tl!("Change")).size(10.5).color(t.text_faint));
+    });
+
+    ui.add_space(8.0);
+    if crate::widgets::secondary_button(ui, &tl!("Preferences…"), width).clicked() {
+        crate::prefs_ui::open_preferences(app, "interface");
+    }
+    ui.add_space(6.0);
+    if crate::widgets::secondary_button(ui, &tl!("Keyboard Shortcuts…"), width).clicked() {
+        crate::prefs_ui::open_shortcuts(app, 0);
+    }
 }
 
 /// The left rail: New, Open and the file-drop hint, the card's actions in a column.
@@ -331,6 +372,34 @@ pub fn category_presets(category: usize) -> &'static [crate::new_doc_ui::Preset]
 pub fn templates(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = crate::theme::Tokens::get(ui.ctx());
     let category = resolved_category(app.ui.chrome.home_category);
+    // The search box: across the tab row's own width, so it reads as the top of the panel.
+    // It matches presets by name across every category, which is the reason it exists — the
+    // category tabs are seven choices to page through, a name is one.
+    ui.horizontal(|ui| {
+        let width = ui.available_width();
+        let mut text = app.ui.chrome.home_search.clone();
+        let edit = egui::TextEdit::singleline(&mut text)
+            .hint_text(tl!("Search templates…"))
+            .desired_width(width - if app.ui.chrome.home_search.is_empty() { 0.0 } else { 22.0 })
+            .font(egui::TextStyle::Body);
+        let resp = ui.add(edit);
+        if resp.changed() {
+            app.ui.chrome.home_search = text;
+        }
+        // A clear button, so a long query does not have to be selected and deleted by hand. It sits
+        // after the field, which is the leading edge in a right-to-left layout and the trailing one
+        // in a left-to-right one, so it needs no direction of its own.
+        if !app.ui.chrome.home_search.is_empty() {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), Sense::hover());
+            let clicked = ui.interact(r, resp.id.with("clear"), Sense::click());
+            crate::icons::paint(ui, r, "x", 12.0, t.text_faint);
+            if clicked.clicked() {
+                app.ui.chrome.home_search.clear();
+                resp.request_focus();
+            }
+        }
+    });
+    ui.add_space(6.0);
     // The category tabs, drawn exactly as the dialog draws them.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 18.0;
@@ -356,6 +425,21 @@ pub fn templates(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         crate::new_doc_ui::recent_cards(&serde_json::Map::new(), &app.session.presets.recent_documents, &units)
     } else {
         category_presets(category).iter().copied().map(crate::new_doc_ui::Card::Builtin).collect()
+    };
+    // A search matches across every category, not just the tab: the tabs are seven pages to flip
+    // through and a name is one. Case-insensitive, and the underlined tab stays the one the query
+    // started from, so a hit from another category is a click away rather than a surprise.
+    let query = app.ui.chrome.home_search.trim().to_lowercase();
+    let presets: Vec<crate::new_doc_ui::Card> = if query.is_empty() {
+        presets
+    } else {
+        crate::new_doc_ui::CATEGORIES
+            .iter()
+            .flat_map(|c| c.1)
+            .filter(|p| p.0.to_lowercase().contains(&query))
+            .copied()
+            .map(crate::new_doc_ui::Card::Builtin)
+            .collect()
     };
     if presets.is_empty() {
         // A category with no presets, or Recent on a machine that has created none. The tab row is

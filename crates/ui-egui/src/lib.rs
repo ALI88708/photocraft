@@ -87,6 +87,7 @@ pub mod field_tab;
 pub mod file_dialog;
 pub mod file_open;
 pub mod file_ui;
+pub mod first_launch;
 pub mod fill_ui;
 pub mod filter_dialog;
 mod filter_preview_ui;
@@ -898,6 +899,7 @@ impl PhotocraftApp {
         prefs_ui::load(&mut app);
         // After the saved preferences, which say whether the set was already offered.
         kys_import::offer_import(&mut app);
+        first_launch::offer(&mut app);
         notices::wayland_file_drop_guidance(&mut app);
         // File › Scripts › Script Events Manager: "Start Application".
         photocraft_engine::automate_cmds::fire_event(&mut app.session, "startApplication");
@@ -1887,6 +1889,8 @@ impl eframe::App for PhotocraftApp {
         notices::show(self, &ctx);
         gpu_status::show_fallback(self, &ctx);
         kys_import::show_offer(self, &ctx);
+        // The first-launch setup: once, on a machine that has never answered it.
+        first_launch::show(self, &ctx);
         if chrome && self.ui.panels.menu_bar && self.custom_titlebar && !self.ui.dialogs.is_empty() {
             titlebar::modal_drag_overlay(&ctx);
         }

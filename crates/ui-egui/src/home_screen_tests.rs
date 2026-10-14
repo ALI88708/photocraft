@@ -140,6 +140,51 @@ fn last_card(h: &Harness<'_, (PhotocraftApp, Option<Rect>, bool)>) -> Rect {
 }
 
 #[test]
+fn a_search_matches_across_every_category() {
+    // The tabs are seven pages to flip through; a name is one.
+    let mut h = harness(app());
+    h.state_mut().ui.chrome.home_search = "iphone".into();
+    h.run_steps(2);
+    assert!(h.query_by_label("iPhone 16").is_some(), "a Mobile preset is found from the Photo tab");
+    assert!(h.query_by_label("iPhone 16 Pro Max").is_some());
+    assert!(h.query_by_label("A4").is_none(), "and the category it is not in is not shown");
+
+    h.state_mut().ui.chrome.home_search = "IPHONE".into();
+    h.run_steps(2);
+    assert!(h.query_by_label("iPhone 16").is_some(), "the search is case-insensitive");
+
+    h.state_mut().ui.chrome.home_search = "zzz".into();
+    h.run_steps(2);
+    assert!(h.query_by_label("iPhone 16").is_none(), "a query nothing matches shows nothing");
+}
+
+#[test]
+fn the_card_offers_the_settings_instead_of_the_community_links() {
+    // Under 980 points the Home screen is the card, and it offers what the dashboard offers:
+    // settings, not a Discord button and a row of links.
+    let h = screen_harness(app(), vec2(760.0, 480.0), crate::theme::ThemeKind::Pro);
+    assert!(h.query_by_label_contains("Preferences").is_some(), "the card offers Preferences");
+    assert!(h.query_by_label_contains("Keyboard Shortcuts").is_some(), "and the shortcut list");
+    for gone in ["Join us on Discord", "PhotoCraft website", "GitHub", "ArtCraft"] {
+        assert!(h.query_all_by_label_contains(gone).next().is_none(), "{gone:?} is not on the card");
+    }
+}
+
+#[test]
+fn the_settings_column_offers_a_theme_preferences_and_shortcuts() {
+    // The settings column replaces the Discord button and the link row. It lives on the screen, not
+    // in the Templates panel, so this drives the whole Home screen.
+    let h = screen_harness(app(), vec2(1440.0, 900.0), crate::theme::ThemeKind::Pro);
+    assert!(h.query_by_label("Settings").is_some(), "the column is labelled");
+    assert!(h.query_by_label("Preferences…").is_some(), "it opens Preferences");
+    assert!(h.query_by_label("Keyboard Shortcuts…").is_some(), "and the shortcut list");
+    // The theme button shows whatever theme the app is in, so the label is asserted against the
+    // app's own state rather than a fixed string.
+    let theme = h.state().0.ui.theme;
+    assert!(h.query_all_by_label_contains(&theme.id()[..6]).next().is_some(), "and the current theme, {}", theme.label());
+}
+
+#[test]
 fn chrome_category_defaults_and_round_trips() {
     assert_eq!(ChromeState::default().home_category, home_screen::DEFAULT_CATEGORY);
     let json = serde_json::to_string(&ChromeState { home_category: 4, ..Default::default() }).unwrap();
@@ -242,9 +287,9 @@ fn clicking_a_card_opens_new_document_with_that_preset() {
 /// enough for the three columns it draws.
 #[test]
 fn the_dashboard_boundary_is_owned_by_the_wide_side() {
-    use home_screen::{Layout, layout_for};
-    assert_eq!(layout_for(979.9), Layout::Compact);
-    assert_eq!(layout_for(980.0), Layout::Dashboard);
+    use home_screen::{DASHBOARD_MIN_WIDTH, Layout, layout_for};
+    assert_eq!(layout_for(DASHBOARD_MIN_WIDTH - 0.1), Layout::Compact);
+    assert_eq!(layout_for(DASHBOARD_MIN_WIDTH), Layout::Dashboard);
     assert_eq!(layout_for(1440.0), Layout::Dashboard);
 }
 
@@ -303,10 +348,9 @@ fn a_wide_window_uses_the_dashboard() {
         "Open…",
         "Drop an image or PSD anywhere to open it.",
         "one.png",
-        "Join us on Discord",
-        "PhotoCraft website",
-        "GitHub",
-        "ArtCraft",
+        "Settings",
+        "Preferences…",
+        "Keyboard Shortcuts…",
         "Web",
         // The default category is Photo, so its presets are the ones on the dashboard by default.
         "Landscape, 6 x 4",
@@ -314,15 +358,19 @@ fn a_wide_window_uses_the_dashboard() {
     ] {
         assert!(h.query_all_by_label_contains(label).next().is_some(), "{label:?} is on the dashboard");
     }
-    // Three columns: the actions on the left, the templates in the middle, recents and links
+    // The community links are not on the screen you land on: they belong in the app's own menus.
+    for gone in ["Join us on Discord", "PhotoCraft website", "GitHub", "ArtCraft"] {
+        assert!(h.query_all_by_label_contains(gone).next().is_none(), "{gone:?} is not on the Home screen");
+    }
+    // Three columns: the actions on the left, the templates in the middle, recents and settings
     // on the right.
     let rail = h.get_by_label_contains("New document").rect();
     let grid = h.get_by_label("Landscape, 6 x 4").rect();
     let recents = h.get_by_label("one.png").rect();
-    let right = h.get_by_label("Join us on Discord").rect();
+    let right = h.get_by_label("Preferences…").rect();
     assert!(rail.left() < grid.left(), "the rail is left of the templates: {rail:?} vs {grid:?}");
     assert!(grid.left() < recents.left(), "the right column is right of the templates: {recents:?} vs {grid:?}");
-    assert!((recents.left() - right.left()).abs() < 1.0, "the recents and the links share the right column: {recents:?} vs {right:?}");
+    assert!((recents.left() - right.left()).abs() < 1.0, "the recents and the settings share the right column: {recents:?} vs {right:?}");
 
     // At the routing threshold the grid still fits the column between the rail and the right
     // column: three cards and the two gaps between them.
@@ -330,6 +378,6 @@ fn a_wide_window_uses_the_dashboard() {
     photo.ui.chrome.home_category = 1; // Photo: six presets, two rows of three
     let h = harness_at_width(photo, home_screen::DASHBOARD_MIN_WIDTH, 900.0, crate::theme::ThemeKind::Pro);
     let third = h.get_by_label("Landscape, 10 x 8").rect();
-    let links = h.get_by_label("Join us on Discord").rect();
-    assert!(third.right() <= links.left(), "the third card fits the column at the threshold: {third:?} reaches into {links:?}");
+    let settings = h.get_by_label("Preferences…").rect();
+    assert!(third.right() <= settings.left(), "the third card fits the column at the threshold: {third:?} reaches into {settings:?}");
 }

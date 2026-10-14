@@ -20,6 +20,10 @@ pub struct ChromeState {
     /// Index into `new_doc_ui::CATEGORIES` for the Home screen's Templates panel; 0 is "Recent".
     /// Defaults to 0, so a state file written before this field existed still loads.
     pub home_category: usize,
+    /// What the Home screen's template search box holds, so a half-typed query survives the frames
+    /// that redraw the panel. Empty means "no search".
+    #[serde(default)]
+    pub home_search: String,
 }
 
 impl ChromeState {
@@ -39,7 +43,7 @@ impl ChromeState {
 
 impl Default for ChromeState {
     fn default() -> Self {
-        Self { status_info: "dimensions".into(), home: None, home_category: crate::home_screen::DEFAULT_CATEGORY }
+        Self { status_info: "dimensions".into(), home: None, home_category: crate::home_screen::DEFAULT_CATEGORY, home_search: String::new() }
     }
 }
 
