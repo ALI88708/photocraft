@@ -241,11 +241,11 @@ fn settings(app: &mut PhotocraftApp, ui: &mut egui::Ui, t: &crate::theme::Tokens
     });
 
     ui.add_space(8.0);
-    if crate::widgets::secondary_button(ui, &tl!("Preferences…"), width).clicked() {
+    if crate::widgets::secondary_button(ui, tl!("Preferences…"), width).clicked() {
         crate::prefs_ui::open_preferences(app, "interface");
     }
     ui.add_space(6.0);
-    if crate::widgets::secondary_button(ui, &tl!("Keyboard Shortcuts…"), width).clicked() {
+    if crate::widgets::secondary_button(ui, tl!("Keyboard Shortcuts…"), width).clicked() {
         crate::prefs_ui::open_shortcuts(app, 0);
     }
 }
