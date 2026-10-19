@@ -16,6 +16,11 @@ pub const DONE_KEY: &str = "firstLaunchSetup";
 
 /// Open the setup once, the first time the app runs.
 pub fn offer(app: &mut PhotocraftApp) {
+    // A one-time question needs somewhere to keep the answer. Without preference storage (the
+    // test harnesses and embedded uses), asking again on every launch would be worse than guessing.
+    if app.services.load_prefs.is_none() || app.services.save_prefs.is_none() {
+        return;
+    }
     if app.session.prefs().dialogs.contains_key(DONE_KEY) {
         return;
     }
@@ -107,6 +112,14 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_setup_needs_somewhere_to_remember_the_answer() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.ui.first_launch_setup = false;
+        offer(&mut app);
+        assert!(!app.ui.first_launch_setup, "no preference storage, no one-time question");
+    }
 
     #[test]
     fn the_setup_window_waits_for_the_home_screen() {
