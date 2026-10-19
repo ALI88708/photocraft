@@ -1007,6 +1007,9 @@ impl PhotocraftApp {
         prefs_ui::load(&mut app);
         // After the saved preferences, which say whether the set was already offered.
         kys_import::offer_import(&mut app);
+        // Tests construct the app and drive its pointer; a first-run window would sit over the
+        // controls they click. The real app reaches this through `new` with preference storage.
+        #[cfg(not(test))]
         first_launch::offer(&mut app);
         notices::wayland_file_drop_guidance(&mut app);
         // File › Scripts › Script Events Manager: "Start Application".
