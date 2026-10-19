@@ -245,7 +245,7 @@ fn the_editing_chrome_is_hidden_while_home_is_up() {
     assert_eq!(h.state().session.documents().len(), 0, "no document is open");
     assert!(h.state_mut().ui.chrome.shows_home(0, true), "Home is up");
     // The panel decides this from the same two facts, so a state where Home is down hides nothing.
-    assert!(h.state_mut().ui.chrome.shows_home(0, false) == false, "the Home preference gates it");
+    assert!(!h.state_mut().ui.chrome.shows_home(0, false), "the Home preference gates it");
 }
 
 #[test]
