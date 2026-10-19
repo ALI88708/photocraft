@@ -28,9 +28,16 @@ fn remember(app: &mut PhotocraftApp) {
     });
 }
 
+/// Whether the setup window belongs on screen: offered, and not over a document.
+pub(crate) fn visible(app: &PhotocraftApp) -> bool {
+    app.ui.first_launch_setup && app.session.documents().is_empty()
+}
+
 /// The window. Closes once the person has answered, whether they chose a theme or skipped.
 pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
-    if !app.ui.first_launch_setup {
+    // On the Home screen only: someone who opened a document before answering is not interrupted
+    // by a setup window over their work, and the canvas keeps the pointer it is given.
+    if !visible(app) {
         return;
     }
     let mut done = None;
@@ -95,4 +102,18 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
     }
     remember(app);
     app.ui.first_launch_setup = false;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_setup_window_waits_for_the_home_screen() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.ui.first_launch_setup = true;
+        assert!(visible(&app));
+        app.session.execute("file.new", json!({"width": 4, "height": 4, "mode": "rgb", "depth": 8})).unwrap();
+        assert!(!visible(&app), "an open document keeps the setup window off the canvas");
+    }
 }
