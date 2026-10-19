@@ -181,7 +181,7 @@ fn the_settings_column_offers_a_theme_preferences_and_shortcuts() {
     // The theme button shows whatever theme the app is in, so the label is asserted against the
     // app's own state rather than a fixed string.
     let theme = h.state().0.ui.theme;
-    assert!(h.query_all_by_label_contains(&theme.id()[..6]).next().is_some(), "and the current theme, {}", theme.label());
+    assert!(h.query_all_by_label_contains(theme.label()).next().is_some(), "and the current theme, {}", theme.label());
 }
 
 #[test]
