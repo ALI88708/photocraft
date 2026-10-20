@@ -66,9 +66,18 @@ If the workspace has not finished its first build yet, wait for `cargo build -p 
 Create `crates/ui-egui/src/home_screen.rs` containing a module doc comment in the crate's house style, then the **five items copied unchanged** from `canvas.rs`: `start_screen` (2369–2424), `start_screen_drop_hint` (2427–2433), `HOME_RECENT` (2436), `HOME_RECENT_ROW` (2438), `home_recent` (2443–2513).
 
 Adjust exactly three things and nothing else:
-- the `use` list, which must now import what those functions used from `super::` — including `crate::{icons, theme, widgets, shortcuts, tab_strip, file_open, notices, links, i18n}` and `crate::PhotocraftApp`, and `egui::{Rect, Sense, pos2, vec2, RichText}`;
-- `tl!` is imported by `use crate::tl;` if the file does not already have it (see `lib.rs:11-15` for the macro's definition);
-- visibility as listed in this task's Interfaces block.
+- **the `use` list — but only what is actually needed.** The moved code references almost everything
+  through fully-qualified paths (`crate::icons::paint`, `egui::pos2`, `crate::theme::semibold`), so
+  importing those modules wholesale produces a dozen unused imports and Step 6 fails. Import only the
+  names used bare. Expect: `egui::{Rect, Sense}`, `crate::PhotocraftApp`, and `crate::canvas::paint_dots`.
+  Do **not** add `use crate::tl;` — the `tl!` macro resolves textually and no module in this crate
+  imports it, so it would warn as unused.
+- `paint_dots` must widen from private to `pub(crate)` in `canvas.rs` — `start_screen` calls it
+  unqualified and the two now live in different modules. One keyword; the function itself stays put and
+  keeps being called at `canvas.rs:1735`.
+- the two `start_screen_drop_hint` references inside `crates/ui-egui/src/canvas.rs`'s own test module
+  (~lines 6003 and 6005) must be repointed to `crate::home_screen::start_screen_drop_hint`, because
+  `use super::*` no longer brings it into scope. Test logic is unchanged — only the path.
 
 Do not rename anything, reformat anything, or "fix" anything. The point of this task is that behaviour cannot change.
 
