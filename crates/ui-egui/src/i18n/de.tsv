@@ -3256,3 +3256,8 @@ curves	Smooth	Glätten
 	Start	Starten
 # Home settings label
 	Settings	Einstellungen
+
+# DDS Options (#1327)
+	DDS Options	DDS-Optionen
+	Compression	Komprimierung
+	Generate Mipmaps	Mipmaps erzeugen

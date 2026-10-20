@@ -4011,3 +4011,7 @@ curves	Smooth	Vloeiend maken
 	Could not apply the setup: {error}	De instelling kon niet worden toegepast: {error}
 	Search templates…	Sjablonen zoeken…
 	Start	Starten
+
+# DDS Options (#1327)
+	DDS Options	DDS-opties
+	Generate Mipmaps	Mipmaps genereren

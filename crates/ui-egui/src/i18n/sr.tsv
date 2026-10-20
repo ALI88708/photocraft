@@ -4324,3 +4324,7 @@ shape	Appearance	Izgled
 	Could not apply the setup: {error}	Nije moguće primeniti podešavanje: {error}
 	Search templates…	Pretraži šablone…
 	Start	Započni
+
+# DDS Options (#1327)
+	DDS Options	DDS opcije
+	Generate Mipmaps	Generiši mipmape

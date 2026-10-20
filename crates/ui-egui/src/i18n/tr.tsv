@@ -3981,3 +3981,7 @@ cameraData	Lens	Lens
 	Could not apply the setup: {error}	Kurulum uygulanamadı: {error}
 	Search templates…	Şablonlarda ara…
 	Start	Başla
+
+# DDS Options (#1327)
+	DDS Options	DDS Seçenekleri
+	Generate Mipmaps	Mipmap oluştur

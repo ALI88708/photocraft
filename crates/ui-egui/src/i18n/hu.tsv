@@ -4170,3 +4170,7 @@ cameraRaw	Yellow	Sárga
 	Could not apply the setup: {error}	A beállítás nem alkalmazható: {error}
 	Search templates…	Sablonok keresése…
 	Start	Indítás
+
+# DDS Options (#1327)
+	DDS Options	DDS-beállítások
+	Generate Mipmaps	Mipmapek létrehozása

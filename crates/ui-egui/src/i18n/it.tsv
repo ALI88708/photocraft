@@ -4368,3 +4368,7 @@ shape	Appearance	Aspetto
 	Could not apply the setup: {error}	Impossibile applicare la configurazione: {error}
 	Search templates…	Cerca modelli…
 	Start	Inizia
+
+# DDS Options (#1327)
+	DDS Options	Opzioni DDS
+	Generate Mipmaps	Genera mipmap

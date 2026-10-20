@@ -3930,3 +3930,8 @@ curves	Smooth	スムーズ
 	Search templates…	テンプレートを検索…
 	Skip	スキップ
 	Start	開始
+
+# DDS Options (#1327)
+	DDS Options	DDS オプション
+	Compression	圧縮
+	Generate Mipmaps	ミップマップを生成

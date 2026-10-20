@@ -3852,3 +3852,8 @@ curves	Smooth	Wygładź
 	Search templates…	Szukaj szablonów…
 	Skip	Pomiń
 	Start	Rozpocznij
+
+# DDS Options (#1327)
+	DDS Options	Opcje DDS
+	Compression	Kompresja
+	Generate Mipmaps	Generuj mipmapy

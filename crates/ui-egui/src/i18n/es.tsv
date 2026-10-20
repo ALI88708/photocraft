@@ -4213,3 +4213,7 @@ navigator	Zoom	Zoom
 	Could not apply the setup: {error}	No se pudo aplicar la configuración: {error}
 	Search templates…	Buscar plantillas…
 	Start	Empezar
+
+# DDS Options (#1327)
+	DDS Options	Opciones de DDS
+	Generate Mipmaps	Generar mipmaps

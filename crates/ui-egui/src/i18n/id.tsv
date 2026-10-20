@@ -3248,3 +3248,8 @@ curves	Smooth	Haluskan
 	Search templates…	Cari templat…
 	Skip	Lewati
 	Start	Mulai
+
+# DDS Options (#1327)
+	DDS Options	Opsi DDS
+	Compression	Kompresi
+	Generate Mipmaps	Buat mipmap

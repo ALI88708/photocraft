@@ -4041,3 +4041,7 @@ layerLabel	No Color	Sem cor
 	Could not apply the setup: {error}	Não foi possível aplicar a configuração: {error}
 	Search templates…	Pesquisar modelos…
 	Start	Começar
+
+# DDS Options (#1327)
+	DDS Options	Opções de DDS
+	Generate Mipmaps	Gerar mipmaps

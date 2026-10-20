@@ -3740,3 +3740,8 @@ curves	Smooth	Làm mượt
 	Search templates…	Tìm kiếm mẫu…
 	Skip	Bỏ qua
 	Start	Bắt đầu
+
+# DDS Options (#1327)
+	DDS Options	Tùy chọn DDS
+	Compression	Nén
+	Generate Mipmaps	Tạo mipmap

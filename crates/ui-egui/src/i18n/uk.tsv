@@ -3961,3 +3961,8 @@ curves	Smooth	Згладити
 	Search templates…	Пошук шаблонів…
 	Skip	Пропустити
 	Start	Почати
+
+# DDS Options (#1327)
+	DDS Options	Параметри DDS
+	Compression	Стиснення
+	Generate Mipmaps	Створити MIP-карти
